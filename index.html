@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#2f7d4f">
+<title>네발 왕복 카운터</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600&family=Oswald:wght@500;700&display=swap">
+<style>
+/* layout: 한 화면 계기판. 바닥에 놓고 멀리서 보는 큰 숫자 + 아래 조작부 */
+:root{
+  --bg:#eef0ea; --panel:#ffffff; --ink:#1d2320; --muted:#66706a; --line:#d5d9d1;
+  --accent:#2f7d4f; --accent-ink:#ffffff; --warn:#b4471f; --track:#dfe3da;
+  --font-num:"Oswald","Arial Narrow",sans-serif; --font-ui:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#121614; --panel:#1b211e; --ink:#e8ece6; --muted:#97a19a; --line:#2c3430;
+  --accent:#4fb377; --accent-ink:#0d1410; --warn:#e07a52; --track:#26302b; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121614; --panel:#1b211e; --ink:#e8ece6; --muted:#97a19a; --line:#2c3430;
+  --accent:#4fb377; --accent-ink:#0d1410; --warn:#e07a52; --track:#26302b; color-scheme:dark}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-ui);font-size:15px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:16px}
+.wrap{max-width:520px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+.status{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);min-height:20px}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--line);flex:none}
+.dot.on{background:var(--accent);animation:pulse 1.4s infinite}
+.dot.err{background:var(--warn)}
+@keyframes pulse{50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){.dot.on{animation:none}}
+.heard{margin-left:auto;max-width:55%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dial{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 16px;display:flex;flex-direction:column;gap:10px;align-items:center;user-select:none}
+.dial.flash{animation:flash .5s}
+@keyframes flash{0%{background:var(--accent);color:var(--accent-ink)}100%{}}
+.label{font-size:12px;letter-spacing:.08em;color:var(--muted)}
+.big{font-family:var(--font-num);font-weight:700;font-size:min(34vw,150px);line-height:.9;font-variant-numeric:tabular-nums}
+.goal{font-family:var(--font-num);font-size:22px;color:var(--muted);font-variant-numeric:tabular-nums}
+.bar{width:100%;height:8px;background:var(--track);border-radius:4px;overflow:hidden}
+.bar>i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;width:100%}
+.stat{display:flex;flex-direction:column;align-items:center;gap:2px}
+.stat b{font-family:var(--font-num);font-weight:500;font-size:22px;font-variant-numeric:tabular-nums}
+.stat span{font-size:11px;color:var(--muted)}
+.row{display:flex;gap:10px}
+button{font:inherit;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:14px 10px;flex:1;cursor:pointer;font-weight:600}
+button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-size:18px;padding:18px}
+button.danger{color:var(--warn)}
+details{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px}
+summary{cursor:pointer;font-weight:600}
+.form{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.form label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);min-width:0}
+.form .full{grid-column:1/-1}
+input[type=number],input[type=text]{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 10px;width:100%;box-sizing:border-box}
+.check{flex-direction:row!important;align-items:center;gap:8px!important;color:var(--ink)!important;font-size:14px!important}
+.note{font-size:12px;color:var(--muted);line-height:1.6;margin:0}
+.confirm{display:flex;gap:8px;align-items:center;font-size:13px}
+.msg{font-size:13px;color:var(--warn);line-height:1.5}
+</style>
+</head><body>
+
+<div class="wrap">
+  <div class="status" aria-live="polite">
+    <span class="dot" id="dot"></span><span id="statusText">대기 중</span>
+    <span class="heard" id="heard"></span>
+  </div>
+
+  <div class="dial" id="dial" role="button" tabindex="0" aria-label="왕복 카운터. 탭 모드에서는 눌러서 회전 1회 추가">
+    <div class="label">왕복</div>
+    <div class="big" id="trips">0</div>
+    <div class="goal" id="goalText">/ 115 왕복 · 2,000 m</div>
+    <div class="bar"><i id="barFill"></i></div>
+    <div class="stats">
+      <div class="stat"><b id="dist">0</b><span>거리 m</span></div>
+      <div class="stat"><b id="turns">0</b><span>회전</span></div>
+      <div class="stat"><b id="time">0:00</b><span>시간</span></div>
+      <div class="stat"><b id="pace">–</b><span>100m 페이스</span></div>
+    </div>
+  </div>
+
+  <div class="msg" id="msg" hidden></div>
+
+  <button class="primary" id="startBtn">시작</button>
+  <div class="row">
+    <button id="minusBtn" aria-label="회전 1회 빼기">− 회전</button>
+    <button id="plusBtn" aria-label="회전 1회 더하기">+ 회전</button>
+  </div>
+  <div class="row" id="resetRow">
+    <button class="danger" id="resetBtn">기록 초기화</button>
+  </div>
+  <div class="confirm" id="confirmRow" hidden>
+    <span>정말 초기화할까요?</span>
+    <button class="danger" id="resetYes">초기화</button>
+    <button id="resetNo">취소</button>
+  </div>
+
+  <details id="settings">
+    <summary>설정</summary>
+    <div class="form">
+      <label>편도 거리 (m)<input id="oneWay" type="number" step="0.1" min="1" value="8.7"></label>
+      <label>목표 거리 (m)<input id="goal" type="number" step="100" min="100" value="2000"></label>
+      <label class="full">인식할 단어 (쉼표로 구분)<input id="keywords" type="text" value="돌아, 턴, 텐, 튼, turn, 하나"></label>
+      <label>중복 방지 (초)<input id="cooldown" type="number" step="0.5" min="1" value="4"></label>
+      <label>음성 안내 간격 (왕복)<input id="every" type="number" step="1" min="1" value="10"></label>
+      <label class="check full"><input id="anyWord" type="checkbox"> 아무 말이나 들리면 회전으로 세기</label>
+      <label class="check full"><input id="voiceOn" type="checkbox" checked> 음성 안내 켜기</label>
+    </div>
+    <p class="note" style="margin-top:10px">
+      출발점에서 시작하고, 끝에 닿아 돌 때마다 "돌아"라고 말하세요. 회전 2번이 왕복 1번입니다.
+      한 음절 단어는 인식이 잘 안 될 수 있어 두 음절 "돌아"를 권합니다. 인식이 자꾸 빗나가면 "아무 말이나" 옵션을 켜세요.
+      화면을 누르면(탭 모드) 회전 1회가 더해집니다.
+    </p>
+  </details>
+</div>
+
+<script>
+(function(){
+const $=id=>document.getElementById(id);
+const store={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},
+  set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+
+const fields=['oneWay','goal','keywords','cooldown','every','anyWord','voiceOn'];
+const saved=store.get('tc-settings',{});
+fields.forEach(f=>{if(saved[f]!==undefined){const el=$(f);if(el.type==='checkbox')el.checked=saved[f];else el.value=saved[f];}});
+function cfg(){return{oneWay:Math.max(1,+$('oneWay').value||8.7),goal:Math.max(100,+$('goal').value||2000),
+  keywords:$('keywords').value.split(',').map(s=>s.trim().toLowerCase().replace(/\s/g,'')).filter(Boolean),
+  cooldown:Math.max(1,+$('cooldown').value||4)*1000,every:Math.max(1,Math.round(+$('every').value||10)),
+  anyWord:$('anyWord').checked,voiceOn:$('voiceOn').checked}}
+fields.forEach(f=>$(f).addEventListener('change',()=>{const o={};fields.forEach(g=>{const el=$(g);o[g]=el.type==='checkbox'?el.checked:el.value});store.set('tc-settings',o);render()}));
+
+let st=store.get('tc-session',{turns:0,activeMs:0});
+let running=false,startedAt=0,lastCount=0,speakingUntil=0,wakeLock=null,rec=null,counted=new Set(),tick=null;
+
+function activeMs(){return st.activeMs+(running?Date.now()-startedAt:0)}
+function fmt(ms){const s=Math.floor(ms/1000),h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;
+  return (h?h+':'+String(m).padStart(2,'0'):m)+':'+String(x).padStart(2,'0')}
+function render(){const c=cfg(),trips=Math.floor(st.turns/2),d=st.turns*c.oneWay,goalTrips=Math.ceil(c.goal/(2*c.oneWay));
+  $('trips').textContent=trips;
+  $('goalText').textContent='/ '+goalTrips+' 왕복 · '+c.goal.toLocaleString()+' m';
+  $('dist').textContent=Math.round(d).toLocaleString();
+  $('turns').textContent=st.turns;
+  const ms=activeMs();$('time').textContent=fmt(ms);
+  $('pace').textContent=d>=20&&ms>5000?fmt(ms/d*100):'–';
+  $('barFill').style.width=Math.min(100,d/c.goal*100)+'%';
+  $('startBtn').textContent=running?'일시정지':(st.turns||st.activeMs?'이어서 시작':'시작');}
+function save(){store.set('tc-session',{turns:st.turns,activeMs:activeMs()})}
+
+let actx=null;
+function beep(freq=880,dur=0.12){try{actx=actx||new (window.AudioContext||window.webkitAudioContext)();
+  const o=actx.createOscillator(),g=actx.createGain();o.frequency.value=freq;g.gain.value=0.25;o.connect(g);g.connect(actx.destination);
+  o.start();g.gain.exponentialRampToValueAtTime(0.001,actx.currentTime+dur);o.stop(actx.currentTime+dur)}catch(e){}}
+function say(text){const c=cfg();if(!c.voiceOn||!('speechSynthesis' in window))return;
+  try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang='ko-KR';u.rate=1.05;
+    speakingUntil=Date.now()+text.length*180+1500;u.onend=()=>{speakingUntil=Date.now()+700};speechSynthesis.speak(u)}catch(e){}}
+
+function addTurn(delta,auto){const c=cfg(),before=Math.floor(st.turns/2);
+  st.turns=Math.max(0,st.turns+delta);const trips=Math.floor(st.turns/2),d=st.turns*c.oneWay;
+  render();save();
+  if(delta>0){beep(st.turns%2?660:990);const dial=$('dial');dial.classList.remove('flash');void dial.offsetWidth;dial.classList.add('flash');
+    if(trips>before){if(d>=c.goal&&(trips-1)*2*c.oneWay<c.goal){say('목표 달성. '+trips+'왕복, '+Math.round(d)+'미터');}
+      else if(trips%c.every===0){say(trips+'왕복, '+Math.round(d)+'미터');}}}
+  else beep(330,.2);}
+
+function setStatus(text,cls){$('statusText').textContent=text;$('dot').className='dot'+(cls?' '+cls:'')}
+function showMsg(t){const m=$('msg');m.textContent=t||'';m.hidden=!t}
+
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+function startRec(){if(!SR){setStatus('음성 인식 불가 · 탭 모드','err');showMsg('이 브라우저는 음성 인식을 지원하지 않습니다. 화면의 큰 숫자를 누르면 회전이 1회씩 더해집니다. 갤럭시는 크롬, 아이폰은 사파리에서 열어 주세요.');return}
+  try{rec=new SR();rec.lang='ko-KR';rec.continuous=true;rec.interimResults=true;rec.maxAlternatives=3;counted=new Set();
+    rec.onstart=()=>setStatus('듣는 중','on');
+    rec.onresult=e=>{const c=cfg();for(let i=e.resultIndex;i<e.results.length;i++){if(counted.has(i))continue;const r=e.results[i];
+      let hit=false,txt=r[0].transcript;for(let a=0;a<r.length;a++){const t=r[a].transcript.toLowerCase().replace(/\s/g,'');
+        if(c.anyWord?t.length>0:c.keywords.some(k=>t.includes(k))){hit=true;txt=r[a].transcript;break}}
+      $('heard').textContent='“'+txt.trim()+'”';
+      if(hit&&Date.now()>speakingUntil&&Date.now()-lastCount>c.cooldown){counted.add(i);lastCount=Date.now();addTurn(1,true)}
+      else if(hit)counted.add(i);}};
+    rec.onerror=e=>{if(e.error==='not-allowed'||e.error==='service-not-allowed'){running&&pause();setStatus('마이크 권한 없음','err');
+        showMsg('마이크 사용이 막혀 있습니다. 브라우저 주소창의 사이트 설정에서 마이크를 허용한 뒤 다시 시작하세요. 그동안은 화면을 눌러 셀 수 있습니다.')}};
+    rec.onend=()=>{if(running)setTimeout(()=>{if(running)startRec()},250);else setStatus('일시정지')};
+    rec.start()}catch(e){setStatus('음성 인식 오류 · 탭 모드','err')}}
+function stopRec(){if(rec){try{rec.onend=null;rec.abort()}catch(e){}rec=null}}
+
+async function lock(){try{wakeLock=await navigator.wakeLock?.request('screen')}catch(e){wakeLock=null}}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&running)lock()});
+
+function start(){running=true;startedAt=Date.now();showMsg('');beep(523,.08);startRec();lock();
+  tick=setInterval(render,1000);render();
+  if(!st.turns)say('시작합니다. 돌 때마다 돌아, 라고 말하세요.')}
+function pause(){st.activeMs=activeMs();running=false;stopRec();clearInterval(tick);save();
+  try{wakeLock&&wakeLock.release()}catch(e){}setStatus('일시정지');render()}
+
+$('startBtn').onclick=()=>running?pause():start();
+$('plusBtn').onclick=()=>addTurn(1);
+$('minusBtn').onclick=()=>addTurn(-1);
+$('dial').onclick=()=>{if(running&&!rec||!SR)addTurn(1)};
+$('dial').onkeydown=e=>{if((e.key==='Enter'||e.key===' ')&&(!SR||running&&!rec)){e.preventDefault();addTurn(1)}};
+$('resetBtn').onclick=()=>{$('resetRow').hidden=true;$('confirmRow').hidden=false};
+$('resetNo').onclick=()=>{$('resetRow').hidden=false;$('confirmRow').hidden=true};
+$('resetYes').onclick=()=>{if(running)pause();st={turns:0,activeMs:0};save();$('resetRow').hidden=false;$('confirmRow').hidden=true;$('heard').textContent='';render()};
+window.addEventListener('pagehide',save);
+if(!SR)setStatus('음성 인식 불가 · 탭 모드','err');
+render();
+})();
+</script>
+</body></html>
