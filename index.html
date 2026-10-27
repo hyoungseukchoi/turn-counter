@@ -129,7 +129,7 @@ function cfg(){return{oneWay:Math.max(1,+$('oneWay').value||8.7),goal:Math.max(1
 fields.forEach(f=>$(f).addEventListener('change',()=>{const o={};fields.forEach(g=>{const el=$(g);o[g]=el.type==='checkbox'?el.checked:el.value});store.set('tc-settings',o);render()}));
 
 let st=store.get('tc-session',{turns:0,activeMs:0});
-let running=false,startedAt=0,lastCount=0,speakingUntil=0,wakeLock=null,rec=null,counted=new Set(),tick=null;
+let running=false,startedAt=0,lastCount=0,speakingUntil=0,wakeLock=null,rec=null,seen={},tick=null;
 
 function activeMs(){return st.activeMs+(running?Date.now()-startedAt:0)}
 function fmt(ms){const s=Math.floor(ms/1000),h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;
@@ -151,7 +151,7 @@ function beep(freq=880,dur=0.12){try{actx=actx||new (window.AudioContext||window
   o.start();g.gain.exponentialRampToValueAtTime(0.001,actx.currentTime+dur);o.stop(actx.currentTime+dur)}catch(e){}}
 function say(text){const c=cfg();if(!c.voiceOn||!('speechSynthesis' in window))return;
   try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang='ko-KR';u.rate=1.05;
-    speakingUntil=Date.now()+text.length*180+1500;u.onend=()=>{speakingUntil=Date.now()+700};speechSynthesis.speak(u)}catch(e){}}
+    speakingUntil=Date.now()+text.length*110+800;u.onend=()=>{speakingUntil=Date.now()+700};speechSynthesis.speak(u)}catch(e){}}
 
 function addTurn(delta,auto){const c=cfg(),before=Math.floor(st.turns/2);
   st.turns=Math.max(0,st.turns+delta);const trips=Math.floor(st.turns/2),d=st.turns*c.oneWay;
@@ -166,14 +166,17 @@ function showMsg(t){const m=$('msg');m.textContent=t||'';m.hidden=!t}
 
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 function startRec(){if(!SR){setStatus('음성 인식 불가 · 탭 모드','err');showMsg('이 브라우저는 음성 인식을 지원하지 않습니다. 화면의 큰 숫자를 누르면 회전이 1회씩 더해집니다. 갤럭시는 크롬, 아이폰은 사파리에서 열어 주세요.');return}
-  try{rec=new SR();rec.lang='ko-KR';rec.continuous=true;rec.interimResults=true;rec.maxAlternatives=3;counted=new Set();
+  try{rec=new SR();rec.lang='ko-KR';rec.continuous=true;rec.interimResults=true;rec.maxAlternatives=3;seen={};
     rec.onstart=()=>setStatus('듣는 중','on');
-    rec.onresult=e=>{const c=cfg();for(let i=e.resultIndex;i<e.results.length;i++){if(counted.has(i))continue;const r=e.results[i];
-      let hit=false,txt=r[0].transcript;for(let a=0;a<r.length;a++){const t=r[a].transcript.toLowerCase().replace(/\s/g,'');
-        if(c.anyWord?t.length>0:c.keywords.some(k=>t.includes(k))){hit=true;txt=r[a].transcript;break}}
-      $('heard').textContent='“'+txt.trim()+'”';
-      if(hit&&Date.now()>speakingUntil&&Date.now()-lastCount>c.cooldown){counted.add(i);lastCount=Date.now();addTurn(1,true)}
-      else if(hit)counted.add(i);}};
+    rec.onresult=e=>{const c=cfg();const now=Date.now();
+      for(let i=e.resultIndex;i<e.results.length;i++){const r=e.results[i];let occ=0,txt=r[0].transcript;
+        for(let a=0;a<r.length;a++){const t=r[a].transcript.toLowerCase().replace(/\s/g,'');let n=0;
+          if(c.anyWord){n=(r.isFinal&&t.length)?1:0}else{c.keywords.forEach(k=>{let p=0;while((p=t.indexOf(k,p))!==-1){n++;p+=k.length}})}
+          if(n>occ){occ=n;txt=r[a].transcript}}
+        $('heard').textContent='“'+txt.trim()+'”';
+        const prev=seen[i]||0;
+        if(occ<prev){seen[i]=occ;continue}
+        if(occ>prev){seen[i]=occ;if(now>speakingUntil&&now-lastCount>c.cooldown){lastCount=now;addTurn(1,true)}}}};
     rec.onerror=e=>{if(e.error==='not-allowed'||e.error==='service-not-allowed'){running&&pause();setStatus('마이크 권한 없음','err');
         showMsg('마이크 사용이 막혀 있습니다. 브라우저 주소창의 사이트 설정에서 마이크를 허용한 뒤 다시 시작하세요. 그동안은 화면을 눌러 셀 수 있습니다.')}};
     rec.onend=()=>{if(running)setTimeout(()=>{if(running)startRec()},250);else setStatus('일시정지')};
